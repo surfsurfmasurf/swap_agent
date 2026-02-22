@@ -221,7 +221,7 @@ impl PriceService {
         let amount_raw   = (amount * 10f64.powi(decimals_in)) as u64;
 
         let url = format!(
-            "https://quote-api.jup.ag/v6/quote?inputMint={}&outputMint={}&amount={}&slippageBps=50",
+            "https://lite-api.jup.ag/swap/v1/quote?inputMint={}&outputMint={}&amount={}&slippageBps=50",
             input_mint, output_mint, amount_raw
         );
 
