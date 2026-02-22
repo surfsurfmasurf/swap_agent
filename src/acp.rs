@@ -45,7 +45,7 @@ impl AcpService {
         serde_json::json!({
             "agent_id": "swap-optimization-agent-v1",
             "agent_name": "Swap Optimization Agent",
-            "description": "Real-time cross-chain swap optimizer: Solana (Jupiter) vs Base (1inch)",
+            "description": "Real-time cross-chain swap optimizer: Solana (Jupiter) vs Base (OpenOcean)",
             "version": "0.1.0",
             "services": [
                 {

@@ -66,9 +66,37 @@ struct JupiterSwapInfo {
 }
 
 #[derive(Debug, Deserialize)]
-struct OneInchQuoteResponse {
-    #[serde(rename = "toAmount")]
-    to_amount: String,
+struct OpenOceanQuoteResponse {
+    data: OpenOceanData,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenOceanData {
+    #[serde(rename = "outAmount")]
+    out_amount: String,
+    price_impact: String,
+    path: OpenOceanPath,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenOceanPath {
+    routes: Vec<OpenOceanRoute>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenOceanRoute {
+    #[serde(rename = "subRoutes")]
+    sub_routes: Vec<OpenOceanSubRoute>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenOceanSubRoute {
+    dexes: Vec<OpenOceanDexEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenOceanDexEntry {
+    dex: String,
 }
 
 fn solana_token_address(symbol: &str) -> Option<&'static str> {
@@ -122,7 +150,7 @@ impl PriceService {
     ) -> Result<PriceQuote> {
         match chain {
             Chain::Solana => self.get_jupiter_quote(token_in, token_out, amount).await,
-            Chain::Base   => self.get_oneinch_quote(token_in, token_out, amount).await,
+            Chain::Base   => self.get_openocean_quote(token_in, token_out, amount).await,
         }
     }
 
@@ -134,7 +162,7 @@ impl PriceService {
     ) -> Result<PriceComparison> {
         let (sol_result, base_result) = tokio::join!(
             self.get_jupiter_quote(token_in, token_out, amount),
-            self.get_oneinch_quote(token_in, token_out, amount),
+            self.get_openocean_quote(token_in, token_out, amount),
         );
 
         let solana_quote = sol_result.ok();
@@ -219,23 +247,33 @@ impl PriceService {
         })
     }
 
-    async fn get_oneinch_quote(&self, token_in: &str, token_out: &str, amount: f64) -> Result<PriceQuote> {
+    async fn get_openocean_quote(&self, token_in: &str, token_out: &str, amount: f64) -> Result<PriceQuote> {
         let src = base_token_address(token_in).context(format!("Unknown Base token: {}", token_in))?;
         let dst = base_token_address(token_out).context(format!("Unknown Base token: {}", token_out))?;
 
-        let decimals_in  = if matches!(token_in.to_uppercase().as_str(),  "ETH" | "WETH") { 18 } else { 6 };
         let decimals_out = if matches!(token_out.to_uppercase().as_str(), "ETH" | "WETH") { 18 } else { 6 };
-        let amount_raw   = format!("{:.0}", amount * 10f64.powi(decimals_in));
 
-        let api_key = std::env::var("ONEINCH_API_KEY").unwrap_or_else(|_| "demo".to_string());
-        let url = format!("https://api.1inch.dev/swap/v6.0/8453/quote?src={}&dst={}&amount={}", src, dst, amount_raw);
+        // OpenOcean accepts human-readable amount (not base units)
+        let url = format!(
+            "https://open-api.openocean.finance/v3/base/quote?inTokenAddress={}&outTokenAddress={}&amount={}&gasPrice=5&slippage=1",
+            src, dst, amount
+        );
 
-        let resp: OneInchQuoteResponse = self.client.get(&url)
-            .header("Authorization", format!("Bearer {}", api_key))
+        let resp: OpenOceanQuoteResponse = self.client.get(&url)
             .send().await?.json().await
-            .context("Failed to parse 1inch response")?;
+            .context("Failed to parse OpenOcean response")?;
 
-        let amount_out = resp.to_amount.parse::<f64>().unwrap_or(0.0) / 10f64.powi(decimals_out);
+        let amount_out = resp.data.out_amount.parse::<f64>().unwrap_or(0.0) / 10f64.powi(decimals_out);
+        let price_impact = resp.data.price_impact
+            .trim_end_matches('%')
+            .trim_start_matches('-')
+            .parse::<f64>().unwrap_or(0.0);
+
+        let route: Vec<String> = resp.data.path.routes.iter()
+            .flat_map(|r| r.sub_routes.iter())
+            .flat_map(|sr| sr.dexes.iter())
+            .map(|d| d.dex.clone())
+            .collect();
 
         Ok(PriceQuote {
             chain: "Base".to_string(),
@@ -243,9 +281,9 @@ impl PriceService {
             token_out: token_out.to_string(),
             amount_in: amount,
             amount_out,
-            price_impact: 0.0,
-            fee: 0.3,
-            route: vec!["1inch Fusion".to_string()],
+            price_impact,
+            fee: 0.2,
+            route,
             timestamp_ms: now_ms(),
         })
     }

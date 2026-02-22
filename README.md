@@ -80,7 +80,7 @@ src/
 |---|---|
 | `axum 0.7` | Async HTTP framework |
 | `tokio 1` (full) | Async runtime |
-| `reqwest 0.11` | Outbound HTTP to DEX APIs (rustls TLS) |
+| `reqwest 0.11` | Outbound HTTP to DEX APIs (rustls TLS, no API keys required) |
 | `serde / serde_json` | JSON serialization |
 | `tower-http 0.5` | CORS + request tracing middleware |
 | `uuid 1` | Job ID generation for ACP |
@@ -120,7 +120,7 @@ swap_agent/
 | BONK | `DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263` |
 | JUP | `JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN` |
 
-### Base (1inch)
+### Base (OpenOcean)
 
 | Symbol | Contract Address |
 |---|---|
@@ -155,7 +155,7 @@ RUST_LOG=swap_agent=debug,tower_http=info
 All variables are optional — the agent will start with defaults if `.env` is absent.
 
 **Jupiter API** requires no key and has no rate limits for public use.
-**1inch API** uses `Bearer` token auth. With `demo`, production pairs may return errors — get a free key at [portal.1inch.dev](https://portal.1inch.dev).
+**OpenOcean API** requires no key — it is fully public.
 
 ---
 
@@ -170,7 +170,7 @@ All variables are optional — the agent will start with defaults if `.env` is a
 git clone https://github.com/surfsurfmasurf/swap_agent.git
 cd swap_agent
 
-# (Optional) create your .env
+# (Optional) create your .env — no API keys required
 cp .env.example .env   # or create manually — see Configuration above
 
 # Development build + run (slower binary, faster compile)
@@ -290,7 +290,7 @@ curl "http://localhost:8080/api/v1/price/solana?token_in=SOL&token_out=USDC&amou
 
 ### GET /api/v1/price/base
 
-Fetch a live swap quote from 1inch on Base (chain ID 8453).
+Fetch a live swap quote from OpenOcean on Base (chain ID 8453). No API key required.
 
 **Query parameters:** same as `/api/v1/price/solana`.
 
@@ -305,9 +305,9 @@ curl "http://localhost:8080/api/v1/price/base?token_in=ETH&token_out=USDC&amount
   "token_out": "USDC",
   "amount_in": 0.1,
   "amount_out": 329.41,
-  "price_impact": 0.0,
-  "fee": 0.3,
-  "route": ["1inch Fusion"],
+  "price_impact": 0.03,
+  "fee": 0.2,
+  "route": ["UniswapV3", "AerodromeSlipstream"],
   "timestamp_ms": 1708612345999
 }
 ```
@@ -341,8 +341,8 @@ curl "http://localhost:8080/api/v1/price/compare?token_in=USDC&token_out=USDT&am
   "base_quote": {
     "chain": "Base",
     "amount_out": 99.91,
-    "fee": 0.3,
-    "route": ["1inch Fusion"],
+    "fee": 0.2,
+    "route": ["UniswapV3", "AerodromeSlipstream"],
     ...
   },
   "best_chain": "Solana",
@@ -615,5 +615,5 @@ curl -s "$BASE/acp/status/$JOB_ID" | python3 -m json.tool
 **Troubleshooting:**
 
 - `502 Bad Gateway` on price endpoints → the upstream DEX API is unreachable or returned an unexpected response. Check `RUST_LOG=debug` output in `agent.log`.
-- `1inch` returning errors with `demo` key → sign up for a free key at [portal.1inch.dev](https://portal.1inch.dev) and set `ONEINCH_API_KEY` in `.env`.
+- Base chain returning 502 → OpenOcean API may be temporarily unavailable. Check `agent.log` for the raw error. No API key is needed.
 - Port already in use → check `ss -tlnp | grep 8080` and kill the conflicting process or change `BIND_ADDR`.
