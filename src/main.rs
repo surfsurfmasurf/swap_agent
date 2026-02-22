@@ -31,6 +31,15 @@ struct PriceQuery {
     amount: Option<f64>,
 }
 
+#[derive(Deserialize)]
+struct SwapQuoteQuery {
+    token_in: String,
+    token_out: String,
+    amount_in: f64,
+    max_slippage_pct: Option<f64>,
+    preferred_chain: Option<String>,
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::registry()
@@ -53,7 +62,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/v1/price/solana",      get(price_solana))
         .route("/api/v1/price/base",        get(price_base))
         .route("/api/v1/price/compare",     get(price_compare))
-        .route("/api/v1/swap/quote",        post(swap_quote))
+        .route("/api/v1/swap/quote",        get(swap_quote_get).post(swap_quote))
         .route("/api/v1/swap/execute",      post(swap_execute))
         .route("/acp/offering",             get(acp_offering))
         .route("/acp/invoke",               post(acp_invoke))
@@ -98,6 +107,24 @@ async fn price_compare(
     Query(q): Query<PriceQuery>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     s.price_service.compare_prices(&q.token_in, &q.token_out, q.amount.unwrap_or(1.0))
+        .await
+        .map(|r| Json(serde_json::to_value(r).unwrap()))
+        .map_err(|_| StatusCode::BAD_GATEWAY)
+}
+
+async fn swap_quote_get(
+    State(s): State<Arc<AppState>>,
+    Query(q): Query<SwapQuoteQuery>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    let req = SwapRequest {
+        token_in: q.token_in,
+        token_out: q.token_out,
+        amount_in: q.amount_in,
+        max_slippage_pct: q.max_slippage_pct,
+        preferred_chain: q.preferred_chain,
+        wallet_address: None,
+    };
+    s.price_service.get_best_quote(&req)
         .await
         .map(|r| Json(serde_json::to_value(r).unwrap()))
         .map_err(|_| StatusCode::BAD_GATEWAY)
